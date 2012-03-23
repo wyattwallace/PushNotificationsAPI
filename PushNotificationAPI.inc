@@ -146,28 +146,58 @@ class PushNotificationNewProfileViewAndroid implements IPushNotificationDecorata
   }
 }
 
-class PushNotificationNewProfileViewIOS implements IPushNotificationDecoratable
+/**
+ * FACTOR IN EXISTING PushNotificationPayload CLASS
+ */
+abstract class PushNotificationPayload implements IPushNotificationDecoratable
+{
+  /**
+   * 1. Remove second parameter frpm constructor signature
+   *
+   * 2. Rename getPayload() to decoratable method, processData() or whatever we come up with,
+   *     and pass data/payload into it.  
+   *
+   * 3. Update signature of getAlert() and getExtendedData() to accept data/payload
+   */
+}
+
+
+class PushNotificationNewProfileViewIOS extends PushNotificationPayload
 {
   const MESSAGE = '%s just viewed your profile';
 
   /**
-   *
+   * AMQP path will pass along minimum amount of data, we will pad payload
+   * here with details associated with notification
+   * 
    * @param array $data
    * @access public
    * @abstract
    */
   public function processData( array $data )
   {
-    // sprintf in consumer? or here? TBD
+    // look for expected data, if not found the add 
+    $payload = array();
     
-    $userData = new UserData( $data->fromMemberId );
-    $userDataArray = $userData->getUserData( array( 'firstName' ) );
+    if ( isset( $data['firstName'] ) )
+    {
+      // first name set, so use it
+      $payload['firstName'] = $data['firstName'];
+    }
+    elseif ( isset( $data['fromMemberId'] ) )
+    { 
+      // no first name, but we have the memberId, so look up firstName
+      $userData = new UserData( $data->fromMemberId );
+      $userDataArray = $userData->getUserData( array( 'firstName' ) );
+      $payload['firstName'] = $userDataArray[0]->firstName;
+    }
+    else
+    {
+      // no firstName and no memberId so throw exception
+    }
 
-    $returnArr = array();
-    $returnArr['replacements'] = array( 'firstName' => $userDataArray[0]->firstName );
-    $returnArr['mesage'] = self::MESSAGE;
-
-    return $returnArr;
+    // call parents method that formats data correctly for iOS
+    return parent::processData( $payload );
   }
 }
 

@@ -191,7 +191,7 @@ class PushNotifications
         $userDeviceLinks = $this->getUserDeviceLinks( $memberId );
 
         // instantiate observable object
-        $pushableObjectsList = new RemovableObjectsList();
+        $pushableObjectsList = new PushableObjectsList();
 
         // add each device as an observer, each will handle the send in their own way
         foreach( $userDeviceLinks as $deviceKey => $deviceData )

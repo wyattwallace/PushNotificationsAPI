@@ -38,11 +38,62 @@ interface IPushableObserver
 abstract class AbstractPushableObject implements IPushableObserver
 {
 
-  public function sendNotification( $queueName, array $data )
+  abstract public function getPushData( $payload );
+
+  public function push( IPushableObserved $sender )
+  {
+    $payload = $sender->getPayload();
+
+    if ( true === $this->isNotificationRatelimited( $payload->toMemberId, $payload->fromMemberId ) )
+    {
+      return true;
+    }
+
+    if ( false === $this->userSettingsAllowsNotification( ) )
+    {
+      return true;
+    }
+
+    $data = $this->getPushData( $payload );
+    
+    $this->sendNotification( $data );
+  }
+
+  protected function sendNotification( $data )
   {
 
     // send into queue fQueue or mybPublish ?
-    fQueue::getInstance( )->enqueue( $queueName, $data );
+
+  }
+
+  /** 
+   * check to see if the notification is ratelimited
+   *
+   * Default Rules:
+   * User A can only send X push notifications 
+   * to User B in N minutes (X=2, N=10)
+   *
+   * User B can only receive X total push notifications 
+   * per N minutes  (X=10, N=60)
+   * 
+   * User B can only receive A total push notifications 
+   * per N hours  (A=50, N=24)
+   *
+   * if the $from user is 0, ignore limiting
+   *
+   * @param int $to recipient of notification 
+   * @param int $from sender of the notification
+   * @return bool
+   */
+  protected function isNotificationRatelimited( $to, $from )
+  {
+    // check rate limit factoring in Device Type self::NOTIFICATION_SETTING_TYPE
+    
+  }
+
+  protected function userSettingsAllowsNotification( )
+  {
+    // check notifications settings self::NOTIFICATION_SETTING_TYPE
 
   }
 
@@ -64,7 +115,7 @@ class PushableObjectsList implements IPushableObserved
 
     foreach( $this->observers as $obs ) 
     {
-      if ( ! $obs->send( $this ) ) 
+      if ( ! $obs->push( $this ) ) 
       {
         $this->err = array_merge( $this->err, $obs->err );
         $returnVal = false;
@@ -90,30 +141,25 @@ class PushNotificationDecorator
 {
   $pushNotificationObject;
 
-  public function __construct( $deviceType, $payload )
+  public function __construct( $notificationType )
   {
     // get name of decoratable class
-    $className = $this->getDecoratableClassName( $deviceType, $payload['routingKey'] );
+    $className = $this->getDecoratableClassName( $notificationType );
 
     // if class exists check
 
     $this->pushNotificationObject = new $className();
   }
 
-  public function processData( $payload )
+  public function getNotificationData( $payload )
   {
-    return $this->pushNotificationObject->processData( $payload );
+    return $this->pushNotificationObject->getNotificationData( $payload );
   }
 
-  // we need to map the routing key to Push Notification type
-  protected function getDecoratableClassName( $deviceType, $routingKey )
+  protected function getDecoratableClassName( $notificationType )
   {
-    // string munge here
-
-    // combine to form class name - PushNotificationNewProfileViewAndroid
-    $string = 'PushNotification' . $routingKey . $deviceType;
-
-    return $string;
+    // combine to form class name - PushNotificationNewProfileView
+    return 'PushNotification' . ucfirst( $notificationType );
   }
 
 }
@@ -126,10 +172,10 @@ interface IPushNotificationDecoratable
    * @access public
    * @abstract
    */
-  public function processData( array $data );
+  public function getNotificationData( array $payload );
 }
 
-class PushNotificationNewProfileViewAndroid implements IPushNotificationDecoratable
+class PushNotificationNewProfileView implements IPushNotificationDecoratable
 {
 
   /**
@@ -138,119 +184,84 @@ class PushNotificationNewProfileViewAndroid implements IPushNotificationDecorata
    * @access public
    * @abstract
    */
-  public function processData( array $data )
-  {
-    $returnArr = array();
-
-    return $returnArr;
-  }
-}
-
-/**
- * FACTOR IN EXISTING PushNotificationPayload CLASS
- */
-abstract class PushNotificationPayload implements IPushNotificationDecoratable
-{
-  /**
-   * 1. Remove second parameter frpm constructor signature
-   *
-   * 2. Rename getPayload() to decoratable method, processData() or whatever we come up with,
-   *     and pass data/payload into it.  
-   *
-   * 3. Update signature of getAlert() and getExtendedData() to accept data/payload
-   */
-}
-
-
-class PushNotificationNewProfileViewIOS extends PushNotificationPayload
-{
-  const MESSAGE = '%s just viewed your profile';
-
-  /**
-   * AMQP path will pass along minimum amount of data, we will pad payload
-   * here with details associated with notification
-   * 
-   * @param array $data
-   * @access public
-   * @abstract
-   */
-  public function processData( array $data )
+  public function getNotificationData( array $payload )
   {
     // look for expected data, if not found the add 
-    $payload = array();
-    
-    if ( isset( $data['firstName'] ) )
+    $data = array();
+
+    if ( isset( $payload['firstName'] ) )
     {
       // first name set, so use it
-      $payload['firstName'] = $data['firstName'];
+      $data['firstName'] = $payload['firstName'];
     }
-    elseif ( isset( $data['fromMemberId'] ) )
-    { 
+    elseif ( isset( $payload['fromMemberId'] ) )
+    {
       // no first name, but we have the memberId, so look up firstName
-      $userData = new UserData( $data->fromMemberId );
+      $userData = new UserData( $payload['fromMemberId'] );
       $userDataArray = $userData->getUserData( array( 'firstName' ) );
-      $payload['firstName'] = $userDataArray[0]->firstName;
+      $data['firstName'] = $userDataArray[0]->firstName;
     }
     else
     {
       // no firstName and no memberId so throw exception
     }
 
-    // call parents method that formats data correctly for iOS
-    return parent::processData( $payload );
+    return $data;
   }
 }
 
+
+
 class PushableDeviceIphone extends AbstractPushableObject
 {
-  const TYPE = 'iOS';
+  const NOTIFICATION_SETTING_TYPE = 'iphone';
   const QUEUE_NAME = 'iphone_queue_name';
   public $er =  Array();
 
-  public function send( IPushableObserved $sender )
+  public function getPushData( $payload )
   {
-    $payload = $sender->getPayload();
-
-    $pushNotificationDecorator = new pushNotificationDecorator( self::TYPE, $payload );
+    $pushNotificationDecorator = new PushNotificationDecorator( $payload['notificationType'] );
     $data = $pushNotificationDecorator->processData( $payload );
 
-    $this->sendNotification( self::QUEUE_NAME, $data );
+    // do magic here
+
+    return $data;
   }
 
 }
 
 class PushableDeviceIpad extends AbstractPushableObject
 {
-  const TYPE = 'iOS';
+  const NOTIFICATION_SETTING_TYPE = 'ipad';
   const QUEUE_NAME = 'ipad_queue_name';
   public $er =  Array();
 
-  public function send( IPushableObserved $sender )
+  public function getPushData( $payload )
   {
-    $payload = $sender->getPayload();
-
-    $pushNotificationDecorator = new pushNotificationDecorator( self::TYPE, $payload );
+    $pushNotificationDecorator = new PushNotificationDecorator( $payload['notificationType'] );
     $data = $pushNotificationDecorator->processData( $payload );
 
-    $this->sendNotification( self::QUEUE_NAME, $data );
+    // do magic here
+
+    return $data;
   }
 
 }
 
 class PushableDeviceAndroid extends AbstractPushableObject
 {
-  const TYPE = 'android';
+  const NOTIFICATION_SETTING_TYPE = 'android';
   const QUEUE_NAME = 'android_queue_name';
   public $er =  Array();
 
-  public function send( IPushableObserved $sender )
+  public function getPushData( $payload )
   {
-    $payload = $sender->getPayload();
-
-    $pushNotificationDecorator = new pushNotificationDecorator( self::TYPE, $payload );
+    $pushNotificationDecorator = new PushNotificationDecorator( $payload['notificationType'] );
     $data = $pushNotificationDecorator->processData( $payload );
 
-    $this->sendNotification( self::QUEUE_NAME, $data );
+    // do magic here
+
+    return $data;
   }
 
 }
@@ -306,11 +317,6 @@ class PushNotifications
 
     // note: in mybPublish memberId is reserved, always present
     $memberId = $payload->memberId;
-
-    // check rate limiting
-
-    // check notifications settings
-
 
     // get list of devices for this member
     $userDeviceLinks = $this->getUserDeviceLinks( $memberId );

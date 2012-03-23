@@ -37,6 +37,13 @@ interface IPushableObserver
 
 abstract class AbstractPushableObject implements IPushableObserver
 {
+  protected $wakableSettings = array();
+
+  public function __construct( )
+  {
+    // use device type and load Wakable settings - which notifications are wakable and which are not
+    $this->wakableSettings = mybConfig->get( 'foo' );
+  }
 
   abstract public function getPushData( $payload );
 
@@ -178,32 +185,44 @@ interface IPushNotificationDecoratable
 class PushNotificationNewProfileView implements IPushNotificationDecoratable
 {
 
+  const MESSAGE = '%s just viewed your profile';
+
   /**
    *
    * @param array $data
    * @access public
    * @abstract
    */
-  public function getNotificationData( array $payload )
+  public function getNotificationData( array $payload, $wakable = true )
   {
     // look for expected data, if not found the add 
     $data = array();
 
-    if ( isset( $payload['firstName'] ) )
+    if ( $wakable )
     {
-      // first name set, so use it
-      $data['firstName'] = $payload['firstName'];
-    }
-    elseif ( isset( $payload['fromMemberId'] ) )
-    {
-      // no first name, but we have the memberId, so look up firstName
-      $userData = new UserData( $payload['fromMemberId'] );
-      $userDataArray = $userData->getUserData( array( 'firstName' ) );
-      $data['firstName'] = $userDataArray[0]->firstName;
+
+      if ( isset( $payload['firstName'] ) )
+      {
+        // first name set, so use it
+        $data['firstName'] = $payload['firstName'];
+      }
+      elseif ( isset( $payload['fromMemberId'] ) )
+      {
+        // no first name, but we have the memberId, so look up firstName
+        $userData = new UserData( $payload['fromMemberId'] );
+        $userDataArray = $userData->getUserData( array( 'firstName' ) );
+        $data['firstName'] = $userDataArray[0]->firstName;
+      }
+      else
+      {
+        // no firstName and no memberId so throw exception
+      }
+
+      $data['message'] = sprintf( self::MESSAGE, $data['firstName'] );
     }
     else
     {
-      // no firstName and no memberId so throw exception
+      $data['prescense'] = true;
     }
 
     return $data;
@@ -214,6 +233,7 @@ class PushNotificationNewProfileView implements IPushNotificationDecoratable
 
 class PushableDeviceIphone extends AbstractPushableObject
 {
+  const DEVICE_TYPE_NAME = 'iphone';
   const NOTIFICATION_SETTING_TYPE = 'iphone';
   const QUEUE_NAME = 'iphone_queue_name';
   public $er =  Array();
@@ -221,9 +241,31 @@ class PushableDeviceIphone extends AbstractPushableObject
   public function getPushData( $payload )
   {
     $pushNotificationDecorator = new PushNotificationDecorator( $payload['notificationType'] );
-    $data = $pushNotificationDecorator->processData( $payload );
+    $data = $pushNotificationDecorator->getNotificationData( $payload );
 
-    // do magic here
+    /** 
+     * PLUG INTO BOMBARD'S PushNotificationPayload class removing the getAlert(), 
+     * we'll have that from the decorator
+     */
+
+    if ( isset( $data['message'] )
+    {
+      // get a count of unread messages for the user
+      $messages = new Messages( $this->memberId, false );
+      $badgeCount = $messages > 10 ? 10 : (int) $messages;
+
+      $payload['aps'] = array( 'alert' => (string)$data['message'], 'badge' => (int)$badgeCount, 'sound' => (string)'default' );
+      $extendedData = false
+      if ( is_array( $extendedData ) )
+      {
+        $extendedData['type'] = get_class( $this );
+      }
+      else
+      {
+        $extendedData = array( 'type' => get_class( $this ) );
+      }
+      $payload['data'] = $extendedData;
+    }
 
     return $data;
   }
@@ -232,6 +274,7 @@ class PushableDeviceIphone extends AbstractPushableObject
 
 class PushableDeviceIpad extends AbstractPushableObject
 {
+  const DEVICE_TYPE_NAME = 'ipad';
   const NOTIFICATION_SETTING_TYPE = 'ipad';
   const QUEUE_NAME = 'ipad_queue_name';
   public $er =  Array();
@@ -239,9 +282,30 @@ class PushableDeviceIpad extends AbstractPushableObject
   public function getPushData( $payload )
   {
     $pushNotificationDecorator = new PushNotificationDecorator( $payload['notificationType'] );
-    $data = $pushNotificationDecorator->processData( $payload );
+    $data = $pushNotificationDecorator->getNotificationData( $payload );
 
-    // do magic here
+    /** 
+     * PLUG INTO BOMBARD'S PushNotificationPayload class removing the getAlert(), 
+     * we'll have that from the decorator.  
+     */
+    if ( isset( $data['message'] )
+    {
+      // get a count of unread messages for the user
+      $messages = new Messages( $this->memberId, false );
+      $badgeCount = $messages > 10 ? 10 : (int) $messages;
+
+      $payload['aps'] = array( 'alert' => (string)$data['message'], 'badge' => (int)$badgeCount, 'sound' => (string)'default' );
+      $extendedData = false
+      if ( is_array( $extendedData ) )
+      {
+        $extendedData['type'] = get_class( $this );
+      }
+      else
+      {
+        $extendedData = array( 'type' => get_class( $this ) );
+      }
+      $payload['data'] = $extendedData;
+    }
 
     return $data;
   }
@@ -250,16 +314,26 @@ class PushableDeviceIpad extends AbstractPushableObject
 
 class PushableDeviceAndroid extends AbstractPushableObject
 {
+  const DEVICE_TYPE_NAME = 'android';
   const NOTIFICATION_SETTING_TYPE = 'android';
   const QUEUE_NAME = 'android_queue_name';
   public $er =  Array();
 
   public function getPushData( $payload )
   {
+    $wakable = $this->wakableSettings[self::DEVICE_TYPE_NAME][$payload['notificationType']];
+
     $pushNotificationDecorator = new PushNotificationDecorator( $payload['notificationType'] );
-    $data = $pushNotificationDecorator->processData( $payload );
+    $data = $pushNotificationDecorator->getNotificationData( $payload, $wakable );
 
     // do magic here
+
+    // this is android specific
+    $data['collapse_key'] = $data['collapseKey'];
+    $data['type'] = 'notification';
+    $data['key'] = '';
+    $data['delay_while_idle'] = $wakable;
+
 
     return $data;
   }

@@ -92,20 +92,21 @@ class PushNotificationDecorator
 
   public function __construct( $deviceType, $payload )
   {
-    $className = $this-> getPushNotificationClassName( $deviceType, $payload['routingKey'] );
+    // get name of decoratable class
+    $className = $this->getDecoratableClassName( $deviceType, $payload['routingKey'] );
 
     // if class exists check
 
     $this->pushNotificationObject = new $className();
   }
 
-  public function getData( $payload )
+  public function processData( $payload )
   {
-    return $this->pushNotificationObject->getData( $payload );
+    return $this->pushNotificationObject->processData( $payload );
   }
 
   // we need to map the routing key to Push Notification type
-  protected function getPushNotificationClassName( $deviceType, $routingKey )
+  protected function getDecoratableClassName( $deviceType, $routingKey )
   {
     // string munge here
 
@@ -125,7 +126,7 @@ interface IPushNotificationDecoratable
    * @access public
    * @abstract
    */
-  public function getData( array $data );
+  public function processData( array $data );
 }
 
 class PushNotificationNewProfileViewAndroid implements IPushNotificationDecoratable
@@ -137,7 +138,7 @@ class PushNotificationNewProfileViewAndroid implements IPushNotificationDecorata
    * @access public
    * @abstract
    */
-  public function getData( array $data )
+  public function processData( array $data )
   {
     $returnArr = array();
 
@@ -155,7 +156,7 @@ class PushNotificationNewProfileViewIOS implements IPushNotificationDecoratable
    * @access public
    * @abstract
    */
-  public function getData( array $data )
+  public function processData( array $data )
   {
     // sprintf in consumer? or here? TBD
     
@@ -181,7 +182,7 @@ class PushableDeviceIphone extends AbstractPushableObject
     $payload = $sender->getPayload();
 
     $pushNotificationDecorator = new pushNotificationDecorator( self::TYPE, $payload );
-    $data = $pushNotificationDecorator->getData( $payload );
+    $data = $pushNotificationDecorator->processData( $payload );
 
     $this->sendNotification( self::QUEUE_NAME, $data );
   }
@@ -199,7 +200,7 @@ class PushableDeviceIpad extends AbstractPushableObject
     $payload = $sender->getPayload();
 
     $pushNotificationDecorator = new pushNotificationDecorator( self::TYPE, $payload );
-    $data = $pushNotificationDecorator->getData( $payload );
+    $data = $pushNotificationDecorator->processData( $payload );
 
     $this->sendNotification( self::QUEUE_NAME, $data );
   }
@@ -217,7 +218,7 @@ class PushableDeviceAndroid extends AbstractPushableObject
     $payload = $sender->getPayload();
 
     $pushNotificationDecorator = new pushNotificationDecorator( self::TYPE, $payload );
-    $data = $pushNotificationDecorator->getData( $payload );
+    $data = $pushNotificationDecorator->processData( $payload );
 
     $this->sendNotification( self::QUEUE_NAME, $data );
   }

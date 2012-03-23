@@ -228,6 +228,38 @@ class PushableDeviceAndroid extends AbstractPushableObject
 class PushNotifications
 {
 
+  /**
+   * ActiveMQ API callback end point
+   */
+  public function sendNotification( $a, $b, $c, $d )
+  {
+    // 
+    if ( false === $this->isRemote() )
+    {
+      $this->callRemotely( ... );
+    }
+    else
+    {
+      // build $payload 
+      $payload = array();
+      $payload['memberId'] = $a;
+      $payload['toMemberId'] = $b;
+      $payload['className'] = $c;
+
+      // formerly called _sendNotification()
+      $this->enqueueNotification( $payload );
+    }
+   
+  }
+
+  /**
+   * AMQP API callback end point
+   */
+  public function processNotification( $payload )
+  {
+    // perform any preprocessing, if any, before calling enqueueNotificaiton()
+    $this->enqueueNotification( $payload );
+  }
 
   /**
    * Both AMQP and ActiveMQ end points may be different methods in this class, but both
@@ -235,7 +267,8 @@ class PushNotifications
    *
    * ActiveMQ end point will have more data, but will not have routing key
    * AMQP will need some data filled in
-   *
+   * 
+   * Method will contain all of the logic currently held in _sendNotification()
    */
   protected function enqueueNotification( $payload )
   {

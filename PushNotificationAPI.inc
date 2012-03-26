@@ -32,7 +32,7 @@ interface IPushableObserver
    * @access public
    * @abstract
    */
-  public function send( IPushableObserved $sender );
+  public function push( IPushableObserved $sender );
 }
 
 abstract class AbstractPushableObject implements IPushableObserver
